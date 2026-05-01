@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js";
+import { EyeTracker } from "./eye-tracker.js?v=4";
 
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
