@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=11";
+import { EyeTracker } from "./eye-tracker.js?v=12";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();
@@ -134,9 +134,11 @@ stopBtn.addEventListener("click", () => {
   stopBtn.disabled = true;
 });
 
-let calibState = null;
+let calibAbort = null;
 
-calibrateBtn.addEventListener("click", () => {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+calibrateBtn.addEventListener("click", async () => {
   calibrateBtn.disabled = true;
   stopBtn.disabled = true;
   gazeDot.hidden = true;
@@ -149,64 +151,59 @@ calibrateBtn.addEventListener("click", () => {
   }
 
   const margin = 0.1;
-  const W = window.innerWidth;
-  const H = window.innerHeight;
+  const vv = window.visualViewport;
+  const W = vv?.width ?? window.innerWidth;
+  const H = vv?.height ?? window.innerHeight;
   const xs = [margin, 0.5, 1 - margin];
   const ys = [margin, 0.5, 1 - margin];
   const points = [];
   for (const fy of ys) for (const fx of xs) points.push({ x: W * fx, y: H * fy });
 
-  calibState = { points, index: 0, dataset: [], busy: false };
-  showCalibStep();
+  calibAbort = { aborted: false };
+  const myAbort = calibAbort;
   calibrationOverlay.hidden = false;
-});
 
-function showCalibStep() {
-  if (!calibState) return;
-  const { points, index } = calibState;
-  const p = points[index];
-  if (!p) return;
-  calibTarget.classList.remove("sampling");
-  moveTarget(p.x, p.y);
-  calibText.textContent = `${index + 1} / ${points.length} — 점을 응시 후 화면 탭`;
-}
-
-calibrationOverlay.addEventListener("click", async (ev) => {
-  if (ev.target === calibCancel) return;
-  if (!calibState || calibState.busy) return;
-  calibState.busy = true;
-  const { points, index } = calibState;
-  const p = points[index];
-  calibTarget.classList.add("sampling");
-  calibText.textContent = `${index + 1} / ${points.length} — 샘플링 중...`;
   try {
-    const sample = await tracker.sampleAt(p);
-    calibState.dataset.push(sample);
-    if (index + 1 < points.length) {
-      calibState.index += 1;
-      calibState.busy = false;
-      showCalibStep();
-      return;
+    const dataset = [];
+    moveTarget(W / 2, H / 2);
+    calibTarget.classList.remove("sampling");
+    calibText.textContent = "잠시 후 시작합니다...";
+    await sleep(900);
+
+    for (let i = 0; i < points.length; i++) {
+      if (myAbort.aborted) throw new Error("취소됨");
+      const p = points[i];
+      calibTarget.classList.remove("sampling");
+      moveTarget(p.x, p.y);
+      for (let s = 3; s > 0; s--) {
+        if (myAbort.aborted) throw new Error("취소됨");
+        calibText.textContent = `${i + 1} / ${points.length} — 응시하세요 (${s})`;
+        await sleep(500);
+      }
+      calibTarget.classList.add("sampling");
+      calibText.textContent = `${i + 1} / ${points.length} — 샘플링 중`;
+      const sample = await tracker.sampleAt(p, 28);
+      if (myAbort.aborted) throw new Error("취소됨");
+      dataset.push(sample);
     }
-    const fit = tracker.fitFromSamples(calibState.dataset);
+
+    const fit = tracker.fitFromSamples(dataset);
     const rms = Math.round(Math.hypot(fit.rmsX, fit.rmsY));
     setStatus(`캘리브레이션 완료 (적합 오차 ±${rms}px)`);
   } catch (e) {
     console.error(e);
     setStatus("캘리브레이션 실패: " + (e?.message ?? e));
+  } finally {
+    calibrationOverlay.hidden = true;
+    calibrateBtn.disabled = false;
+    stopBtn.disabled = false;
+    calibAbort = null;
   }
-  calibrationOverlay.hidden = true;
-  calibrateBtn.disabled = false;
-  stopBtn.disabled = false;
-  calibState = null;
 });
 
 calibCancel.addEventListener("click", (ev) => {
   ev.stopPropagation();
-  calibrationOverlay.hidden = true;
-  calibrateBtn.disabled = false;
-  stopBtn.disabled = false;
-  calibState = null;
+  if (calibAbort) calibAbort.aborted = true;
   setStatus("캘리브레이션 취소됨");
 });
 
