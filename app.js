@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=5";
+import { EyeTracker } from "./eye-tracker.js?v=6";
 
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
@@ -10,6 +10,11 @@ const gazeDot = document.getElementById("gazeDot");
 const calibrationOverlay = document.getElementById("calibration");
 const calibTarget = document.getElementById("calibTarget");
 const calibText = document.getElementById("calibText");
+const calibCancel = document.getElementById("calibCancel");
+
+function moveTarget(x, y) {
+  calibTarget.style.transform = `translate(${x}px, ${y}px)`;
+}
 const permGate = document.getElementById("permGate");
 const permBtn = document.getElementById("permBtn");
 const permStatus = document.getElementById("permStatus");
@@ -148,9 +153,8 @@ calibrateBtn.addEventListener("click", async () => {
     { x: W * (1 - margin), y: H * (1 - margin) },
   ];
 
-  calibTarget.style.left = points[0].x + "px";
-  calibTarget.style.top = points[0].y + "px";
-  calibText.textContent = "준비 중...";
+  moveTarget(points[0].x, points[0].y);
+  calibText.textContent = "준비 중... (v6)";
   calibrationOverlay.hidden = false;
 
   try {
@@ -158,8 +162,7 @@ calibrateBtn.addEventListener("click", async () => {
       points,
       async (p, i) => {
         calibTarget.classList.remove("sampling");
-        calibTarget.style.left = p.x + "px";
-        calibTarget.style.top = p.y + "px";
+        moveTarget(p.x, p.y);
         calibText.textContent = `${i + 1} / ${points.length} — 점을 응시하세요`;
       },
       async (p, i) => {
@@ -176,6 +179,13 @@ calibrateBtn.addEventListener("click", async () => {
     calibrateBtn.disabled = false;
     stopBtn.disabled = false;
   }
+});
+
+calibCancel.addEventListener("click", () => {
+  calibrationOverlay.hidden = true;
+  calibrateBtn.disabled = false;
+  stopBtn.disabled = false;
+  setStatus("캘리브레이션 취소됨");
 });
 
 window.addEventListener("error", (ev) => {
