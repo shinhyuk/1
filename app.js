@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=14";
+import { EyeTracker } from "./eye-tracker.js?v=15";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();
@@ -156,12 +156,14 @@ calibrateBtn.addEventListener("click", async () => {
     return;
   }
 
-  const margin = 0.1;
+  const margin = 0.08;
   const vv = window.visualViewport;
   const W = vv?.width ?? window.innerWidth;
   const H = vv?.height ?? window.innerHeight;
   const xs = [margin, 0.5, 1 - margin];
-  const ys = [margin, 0.5, 1 - margin];
+  // Five vertical rows (top, upper-mid, mid, lower-mid, bottom) gives the
+  // model enough Y data to fit the quadratic vertical terms.
+  const ys = [margin, 0.275, 0.5, 0.725, 1 - margin];
   const points = [];
   for (const fy of ys) for (const fx of xs) points.push({ x: W * fx, y: H * fy });
 

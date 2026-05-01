@@ -273,7 +273,7 @@ export class EyeTracker extends EventTarget {
   }
 
   fitFromSamples(dataset) {
-    if (dataset.length < 6) throw new Error("샘플이 부족합니다 (6개 이상 필요)");
+    if (dataset.length < 12) throw new Error("샘플이 부족합니다 (12개 이상 필요)");
     this.calibration = fitCalibration(dataset);
     this.smoothed = null;
     let sx2 = 0, sy2 = 0;
@@ -402,22 +402,27 @@ function directionMatchesTarget(buf, point, vp) {
   const ty = (point.y - H / 2) / (H / 2);
   const mBx = mean(buf.map((b) => b.bx));
   const mBy = mean(buf.map((b) => b.by));
-  const OFF_AXIS = 0.30;     // target counts as off-center if |t| > this
-  const MIN_BLEND = 0.020;   // min |gaze| to count as "actually looking"
-  const MAX_BLEND_CTR = 0.12;// max |gaze| allowed at a center target
+  const OFF_AXIS_X = 0.30;
+  const OFF_AXIS_Y = 0.20;       // 5-row grid: middle two rows are at ±0.45
+  const MIN_BLEND_X = 0.020;
+  // Vertical demands stricter scaling so an upper-middle-row look isn't
+  // satisfied by a faint downward glance, and so a bottom-row look has
+  // to commit before being accepted.
+  const MIN_BLEND_Y = 0.025 + 0.030 * Math.abs(ty);
+  const MAX_BLEND_CTR = 0.12;
 
-  if (Math.abs(tx) > OFF_AXIS) {
+  if (Math.abs(tx) > OFF_AXIS_X) {
     if (Math.sign(mBx) !== Math.sign(tx)) return { ok: false, reason: "수평 방향 불일치" };
-    if (Math.abs(mBx) < MIN_BLEND) return { ok: false, reason: "수평 응시 약함" };
+    if (Math.abs(mBx) < MIN_BLEND_X) return { ok: false, reason: "수평 응시 약함" };
   } else if (Math.abs(mBx) > MAX_BLEND_CTR) {
     return { ok: false, reason: "중앙 응시 아님" };
   }
 
   // by sign convention: looking up → by > 0; screen y small → up.
-  // So expected by sign = -sign(ty).
-  if (Math.abs(ty) > OFF_AXIS) {
+  // Expected by sign = -sign(ty).
+  if (Math.abs(ty) > OFF_AXIS_Y) {
     if (Math.sign(mBy) !== -Math.sign(ty)) return { ok: false, reason: "수직 방향 불일치" };
-    if (Math.abs(mBy) < MIN_BLEND) return { ok: false, reason: "수직 응시 약함" };
+    if (Math.abs(mBy) < MIN_BLEND_Y) return { ok: false, reason: "수직 응시 약함" };
   } else if (Math.abs(mBy) > MAX_BLEND_CTR) {
     return { ok: false, reason: "중앙 응시 아님" };
   }
@@ -429,13 +434,23 @@ function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Combined feature basis: iris-corner ratio (ix, iy), MediaPipe gaze
-// blendshapes (bx, by) and head-forward direction (hx, hy from the
-// facial transformation matrix), plus bilinear cross terms for the
-// two strongest signals. 8 parameters; 9 calibration samples keep it
-// over-determined so noise averages out.
+// Combined feature basis with extra vertical degrees of freedom.
+// Vertical mapping is non-linear on phones because the camera sits at
+// the top of the screen (looking down ≠ −1 × looking up in geometry,
+// and eyelids occlude the iris when looking down) — so quadratic and
+// head-pitch cross terms target that specifically. 11 parameters;
+// 15-point (3×5) calibration keeps it over-determined.
 function featureBasis(s) {
-  return [1, s.ix, s.iy, s.bx, s.by, s.hx, s.hy, s.bx * s.by];
+  return [
+    1,
+    s.ix, s.iy,
+    s.bx, s.by,
+    s.hx, s.hy,
+    s.bx * s.by,
+    s.iy * s.iy,
+    s.by * s.by,
+    s.by * s.hy,
+  ];
 }
 
 function blendshape(blends, name) {
