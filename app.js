@@ -1,19 +1,6 @@
-import { EyeTracker } from "./eye-tracker.js?v=9";
-
-const debugLogEl = document.getElementById("debugLog");
-const debugLogLines = [];
-function dbg(msg) {
-  const t = new Date().toISOString().slice(11, 19);
-  debugLogLines.push(`[${t}] ${msg}`);
-  if (debugLogLines.length > 40) debugLogLines.shift();
-  if (debugLogEl) debugLogEl.textContent = debugLogLines.join("\n");
-  console.log(msg);
-}
-dbg(`boot v8 — ${navigator.userAgent.slice(0, 60)}`);
-dbg(`viewport ${window.innerWidth}x${window.innerHeight} secure=${window.isSecureContext}`);
+import { EyeTracker } from "./eye-tracker.js?v=10";
 
 window.addEventListener("pageshow", (ev) => {
-  dbg(`pageshow persisted=${ev.persisted}`);
   if (ev.persisted) location.reload();
 });
 
@@ -74,17 +61,12 @@ function drawLandmarks(landmarks) {
   }
 }
 
-let gazeFrameCount = 0;
 tracker.addEventListener("gaze", (ev) => {
   const { landmarks, gaze } = ev.detail;
   drawLandmarks(landmarks);
   if (gaze.calibrated) {
     gazeDot.hidden = false;
     gazeDot.style.transform = `translate(${gaze.x}px, ${gaze.y}px)`;
-  }
-  gazeFrameCount++;
-  if (gazeFrameCount === 1 || gazeFrameCount % 60 === 0) {
-    dbg(`gaze frames=${gazeFrameCount}`);
   }
 });
 
@@ -103,7 +85,6 @@ function setPermStatus(msg, isError = false) {
 }
 
 permBtn.addEventListener("click", async () => {
-  dbg("permBtn click");
   permBtn.disabled = true;
   permHelp.hidden = true;
   setPermStatus("준비 중...");
@@ -121,8 +102,7 @@ permBtn.addEventListener("click", async () => {
   }
 
   try {
-    await tracker.start(video, (msg) => { dbg("start: " + msg); setPermStatus(msg); });
-    dbg("tracker started");
+    await tracker.start(video, (msg) => setPermStatus(msg));
     permGate.hidden = true;
     setStatus("추적 중. 캘리브레이션을 진행하세요.");
     calibrateBtn.disabled = false;
@@ -156,63 +136,44 @@ stopBtn.addEventListener("click", () => {
 
 let calibState = null;
 
-calibrateBtn.addEventListener("click", async () => {
-  dbg("calibrateBtn click");
+calibrateBtn.addEventListener("click", () => {
   calibrateBtn.disabled = true;
   stopBtn.disabled = true;
   gazeDot.hidden = true;
 
   if (!tracker.lastLandmarks) {
-    dbg("no face — abort");
     setStatus("얼굴이 검출되지 않습니다. 카메라에 얼굴이 보이는지 확인하세요.");
     calibrateBtn.disabled = false;
     stopBtn.disabled = false;
     return;
   }
 
-  const margin = 0.12;
+  const margin = 0.1;
   const W = window.innerWidth;
   const H = window.innerHeight;
-  dbg(`viewport at calib ${W}x${H}`);
-  const points = [
-    { x: W * margin, y: H * margin },
-    { x: W * (1 - margin), y: H * margin },
-    { x: W / 2, y: H / 2 },
-    { x: W * margin, y: H * (1 - margin) },
-    { x: W * (1 - margin), y: H * (1 - margin) },
-  ];
-  dbg(`points[0]=(${points[0].x.toFixed(0)},${points[0].y.toFixed(0)})`);
+  const xs = [margin, 0.5, 1 - margin];
+  const ys = [margin, 0.5, 1 - margin];
+  const points = [];
+  for (const fy of ys) for (const fx of xs) points.push({ x: W * fx, y: H * fy });
 
   calibState = { points, index: 0, dataset: [], busy: false };
-  try {
-    showCalibStep();
-    dbg("showCalibStep done");
-  } catch (e) {
-    dbg("showCalibStep ERR " + (e?.message ?? e));
-  }
+  showCalibStep();
   calibrationOverlay.hidden = false;
-  dbg("overlay shown");
 });
 
 function showCalibStep() {
   if (!calibState) return;
   const { points, index } = calibState;
   const p = points[index];
-  if (!p) {
-    dbg(`step ${index}: point is missing (points.length=${points.length})`);
-    return;
-  }
+  if (!p) return;
   calibTarget.classList.remove("sampling");
   moveTarget(p.x, p.y);
   calibText.textContent = `${index + 1} / ${points.length} — 점을 응시 후 화면 탭`;
-  dbg(`step ${index + 1}/${points.length} at (${p.x.toFixed(0)},${p.y.toFixed(0)})`);
 }
 
 calibrationOverlay.addEventListener("click", async (ev) => {
-  dbg(`overlay click target=${ev.target.id || ev.target.tagName}`);
   if (ev.target === calibCancel) return;
-  if (!calibState) { dbg("no calibState"); return; }
-  if (calibState.busy) { dbg("busy, ignored"); return; }
+  if (!calibState || calibState.busy) return;
   calibState.busy = true;
   const { points, index } = calibState;
   const p = points[index];
@@ -229,10 +190,8 @@ calibrationOverlay.addEventListener("click", async (ev) => {
     }
     tracker.fitFromSamples(calibState.dataset);
     setStatus("캘리브레이션 완료");
-    dbg("calibration complete");
   } catch (e) {
     console.error(e);
-    dbg("calibration ERR " + (e?.message ?? e));
     setStatus("캘리브레이션 실패: " + (e?.message ?? e));
   }
   calibrationOverlay.hidden = true;
