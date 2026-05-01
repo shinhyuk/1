@@ -69,18 +69,34 @@ tracker.addEventListener("error", (ev) => {
 
 startBtn.addEventListener("click", async () => {
   startBtn.disabled = true;
-  setStatus("모델 로딩 중...");
+  setStatus("준비 중...");
+  if (!window.isSecureContext) {
+    setStatus("HTTPS 필요. 현재 페이지가 보안 컨텍스트가 아닙니다.");
+    startBtn.disabled = false;
+    return;
+  }
   try {
-    await tracker.start(video);
+    await tracker.start(video, (msg) => setStatus(msg));
     setStatus("추적 중. 캘리브레이션을 진행하세요.");
     calibrateBtn.disabled = false;
     stopBtn.disabled = false;
   } catch (e) {
     console.error(e);
-    setStatus("시작 실패: " + e.message);
+    showError(e);
     startBtn.disabled = false;
   }
 });
+
+function showError(e) {
+  const name = e?.name ?? "Error";
+  const msg = e?.message ?? String(e);
+  let hint = "";
+  if (name === "NotAllowedError") hint = " (카메라 권한이 거부됨)";
+  else if (name === "NotFoundError") hint = " (카메라 장치 없음)";
+  else if (name === "NotReadableError") hint = " (다른 앱이 카메라 사용 중)";
+  else if (msg.includes("getUserMedia")) hint = " (HTTPS 또는 권한 문제)";
+  setStatus(`실패: ${name}: ${msg}${hint}`);
+}
 
 stopBtn.addEventListener("click", () => {
   tracker.stop();
@@ -97,7 +113,14 @@ calibrateBtn.addEventListener("click", async () => {
   stopBtn.disabled = true;
   gazeDot.hidden = true;
 
-  const margin = 0.1;
+  if (!tracker.lastLandmarks) {
+    setStatus("얼굴이 검출되지 않습니다. 카메라에 얼굴이 보이는지 확인하세요.");
+    calibrateBtn.disabled = false;
+    stopBtn.disabled = false;
+    return;
+  }
+
+  const margin = 0.12;
   const W = window.innerWidth;
   const H = window.innerHeight;
   const points = [
@@ -108,30 +131,41 @@ calibrateBtn.addEventListener("click", async () => {
     { x: W * (1 - margin), y: H * (1 - margin) },
   ];
 
+  calibTarget.style.left = points[0].x + "px";
+  calibTarget.style.top = points[0].y + "px";
+  calibText.textContent = "준비 중...";
   calibrationOverlay.hidden = false;
 
   try {
     await tracker.calibrate(
       points,
-      async (p) => {
+      async (p, i) => {
         calibTarget.classList.remove("sampling");
         calibTarget.style.left = p.x + "px";
         calibTarget.style.top = p.y + "px";
-        calibText.textContent = "점을 응시하세요";
+        calibText.textContent = `${i + 1} / ${points.length} — 점을 응시하세요`;
       },
-      async () => {
+      async (p, i) => {
         calibTarget.classList.add("sampling");
-        calibText.textContent = "샘플링 중... 점을 계속 응시하세요";
+        calibText.textContent = `${i + 1} / ${points.length} — 샘플링 중`;
       }
     );
     setStatus("캘리브레이션 완료");
   } catch (e) {
-    setStatus("캘리브레이션 실패: " + e.message);
+    console.error(e);
+    setStatus("캘리브레이션 실패: " + (e?.message ?? e));
   } finally {
     calibrationOverlay.hidden = true;
     calibrateBtn.disabled = false;
     stopBtn.disabled = false;
   }
+});
+
+window.addEventListener("error", (ev) => {
+  setStatus("JS 오류: " + (ev.error?.message ?? ev.message));
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  setStatus("Promise 오류: " + (ev.reason?.message ?? ev.reason));
 });
 
 window.addEventListener("resize", () => {
