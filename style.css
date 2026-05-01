@@ -147,6 +147,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .calib-target {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 28px;
   height: 28px;
   margin-left: -14px;
@@ -154,7 +156,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 6px rgba(78, 161, 255, 0.2), 0 0 30px rgba(78, 161, 255, 0.5);
-  transition: left 0.4s ease, top 0.4s ease;
+  transition: transform 0.4s ease;
+  will-change: transform;
 }
 
 .calib-target.sampling {
@@ -170,7 +173,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .calib-text {
   position: absolute;
-  bottom: 10%;
+  bottom: 14%;
   left: 0;
   right: 0;
   text-align: center;
@@ -178,6 +181,18 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   font-size: 14px;
   margin: 0;
   padding: 0 16px;
+}
+
+.calib-cancel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
 }
 
 .perm-gate {
