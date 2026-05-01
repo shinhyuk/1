@@ -177,18 +177,20 @@ export class EyeTracker extends EventTarget {
    * beyond a small frame-averaging loop. Throws if no face is detected.
    */
   /**
-   * Wait until iris + blendshape features stay within the variance
-   * threshold for `stableNeeded` consecutive frames, then return the
-   * sliding window of those frames as the sample. Callback fires
-   * every frame with the [0..1] stability progress so the UI can
-   * show a "tuning" indicator.
+   * Wait until the gaze is both stable AND pointing at the target.
+   *
+   * Stability = (ix, iy, bx, by) variance under threshold over a
+   * sliding window. Direction match = mean (bx, by) of the window
+   * has the right sign and magnitude for the target's quadrant.
+   * Without the direction check the user could just stare at the
+   * table and we'd happily call that 'stable'.
    */
-  async sampleWhenStable(point, onProgress) {
+  async sampleWhenStable(point, viewport, onProgress) {
     const WINDOW = 12;
     const STABLE_NEEDED = 28;
     const IRIS_VAR = 0.0008;
     const BLEND_VAR = 0.0004;
-    const TIMEOUT_MS = 12000;
+    const TIMEOUT_MS = 15000;
 
     const buf = [];
     let stable = 0;
@@ -205,7 +207,7 @@ export class EyeTracker extends EventTarget {
       buf.push(f);
       if (buf.length > WINDOW) buf.shift();
       if (buf.length < WINDOW) {
-        onProgress?.(0, false);
+        onProgress?.(0, false, "수집 중");
         continue;
       }
 
@@ -213,11 +215,20 @@ export class EyeTracker extends EventTarget {
       const vIy = variance(buf.map((b) => b.y));
       const vBx = variance(buf.map((b) => b.bx));
       const vBy = variance(buf.map((b) => b.by));
-      const ok = vIx < IRIS_VAR && vIy < IRIS_VAR && vBx < BLEND_VAR && vBy < BLEND_VAR;
+      const isStable =
+        vIx < IRIS_VAR && vIy < IRIS_VAR && vBx < BLEND_VAR && vBy < BLEND_VAR;
+
+      const dirCheck = directionMatchesTarget(buf, point, viewport);
+
+      const ok = isStable && dirCheck.ok;
       if (ok) stable++;
       else stable = Math.max(0, stable - 2);
 
-      onProgress?.(Math.min(stable / STABLE_NEEDED, 1), ok);
+      onProgress?.(
+        Math.min(stable / STABLE_NEEDED, 1),
+        ok,
+        ok ? "락온" : dirCheck.reason || "응시 대기"
+      );
 
       if (stable >= STABLE_NEEDED) {
         return {
@@ -232,7 +243,7 @@ export class EyeTracker extends EventTarget {
         };
       }
     }
-    throw new Error("응시가 안정되지 않습니다 — 점을 고정해서 응시하세요");
+    throw new Error("응시가 감지되지 않습니다 — 점을 정확히 보세요");
   }
 
   async sampleAt(point, frames = 16) {
@@ -377,6 +388,41 @@ function variance(arr) {
   let s = 0;
   for (const v of arr) s += (v - m) ** 2;
   return s / (arr.length - 1);
+}
+
+// Verify that the average gaze blendshape over the window points
+// toward the calibration target, using only sign + magnitude (no
+// trained model required). Center column/row gets a "must be near
+// zero" check, off-center cells require sign match plus a minimum
+// activation so a glance at the floor can't masquerade as a corner
+// fixation.
+function directionMatchesTarget(buf, point, vp) {
+  const W = vp?.W ?? 1, H = vp?.H ?? 1;
+  const tx = (point.x - W / 2) / (W / 2);
+  const ty = (point.y - H / 2) / (H / 2);
+  const mBx = mean(buf.map((b) => b.bx));
+  const mBy = mean(buf.map((b) => b.by));
+  const OFF_AXIS = 0.30;     // target counts as off-center if |t| > this
+  const MIN_BLEND = 0.020;   // min |gaze| to count as "actually looking"
+  const MAX_BLEND_CTR = 0.12;// max |gaze| allowed at a center target
+
+  if (Math.abs(tx) > OFF_AXIS) {
+    if (Math.sign(mBx) !== Math.sign(tx)) return { ok: false, reason: "수평 방향 불일치" };
+    if (Math.abs(mBx) < MIN_BLEND) return { ok: false, reason: "수평 응시 약함" };
+  } else if (Math.abs(mBx) > MAX_BLEND_CTR) {
+    return { ok: false, reason: "중앙 응시 아님" };
+  }
+
+  // by sign convention: looking up → by > 0; screen y small → up.
+  // So expected by sign = -sign(ty).
+  if (Math.abs(ty) > OFF_AXIS) {
+    if (Math.sign(mBy) !== -Math.sign(ty)) return { ok: false, reason: "수직 방향 불일치" };
+    if (Math.abs(mBy) < MIN_BLEND) return { ok: false, reason: "수직 응시 약함" };
+  } else if (Math.abs(mBy) > MAX_BLEND_CTR) {
+    return { ok: false, reason: "중앙 응시 아님" };
+  }
+
+  return { ok: true };
 }
 
 function wait(ms) {
