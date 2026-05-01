@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=12";
+import { EyeTracker } from "./eye-tracker.js?v=13";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();
@@ -138,6 +138,12 @@ let calibAbort = null;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function renderBar(progress) {
+  const total = 10;
+  const filled = Math.round(Math.max(0, Math.min(1, progress)) * total);
+  return "▮".repeat(filled) + "▯".repeat(total - filled);
+}
+
 calibrateBtn.addEventListener("click", async () => {
   calibrateBtn.disabled = true;
   stopBtn.disabled = true;
@@ -168,23 +174,28 @@ calibrateBtn.addEventListener("click", async () => {
     moveTarget(W / 2, H / 2);
     calibTarget.classList.remove("sampling");
     calibText.textContent = "잠시 후 시작합니다...";
-    await sleep(900);
+    await sleep(700);
 
     for (let i = 0; i < points.length; i++) {
       if (myAbort.aborted) throw new Error("취소됨");
       const p = points[i];
       calibTarget.classList.remove("sampling");
       moveTarget(p.x, p.y);
-      for (let s = 3; s > 0; s--) {
-        if (myAbort.aborted) throw new Error("취소됨");
-        calibText.textContent = `${i + 1} / ${points.length} — 응시하세요 (${s})`;
-        await sleep(500);
-      }
-      calibTarget.classList.add("sampling");
-      calibText.textContent = `${i + 1} / ${points.length} — 샘플링 중`;
-      const sample = await tracker.sampleAt(p, 28);
+      calibText.textContent = `${i + 1} / ${points.length} — 점을 응시하세요`;
+      await sleep(450);
+      if (myAbort.aborted) throw new Error("취소됨");
+      const sample = await tracker.sampleWhenStable(p, (progress, isStable) => {
+        if (myAbort.aborted) return;
+        if (isStable) calibTarget.classList.add("sampling");
+        else calibTarget.classList.remove("sampling");
+        const pct = Math.round(progress * 100);
+        const bars = renderBar(progress);
+        calibText.textContent = `${i + 1} / ${points.length} — 안정도 ${bars} ${pct}%`;
+      });
       if (myAbort.aborted) throw new Error("취소됨");
       dataset.push(sample);
+      calibText.textContent = `${i + 1} / ${points.length} ✓`;
+      await sleep(180);
     }
 
     const fit = tracker.fitFromSamples(dataset);

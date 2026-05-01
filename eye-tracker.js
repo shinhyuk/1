@@ -176,6 +176,65 @@ export class EyeTracker extends EventTarget {
    * Caller drives the sequence (e.g. tap-to-advance), so no awaits/timers here
    * beyond a small frame-averaging loop. Throws if no face is detected.
    */
+  /**
+   * Wait until iris + blendshape features stay within the variance
+   * threshold for `stableNeeded` consecutive frames, then return the
+   * sliding window of those frames as the sample. Callback fires
+   * every frame with the [0..1] stability progress so the UI can
+   * show a "tuning" indicator.
+   */
+  async sampleWhenStable(point, onProgress) {
+    const WINDOW = 12;
+    const STABLE_NEEDED = 28;
+    const IRIS_VAR = 0.0008;
+    const BLEND_VAR = 0.0004;
+    const TIMEOUT_MS = 12000;
+
+    const buf = [];
+    let stable = 0;
+    const t0 = performance.now();
+
+    while (performance.now() - t0 < TIMEOUT_MS) {
+      await new Promise((r) => requestAnimationFrame(r));
+      if (!this.lastLandmarks) continue;
+      const f = this._extractFeatures(
+        this.lastLandmarks,
+        this.lastBlendshapes,
+        this.lastMatrix
+      );
+      buf.push(f);
+      if (buf.length > WINDOW) buf.shift();
+      if (buf.length < WINDOW) {
+        onProgress?.(0, false);
+        continue;
+      }
+
+      const vIx = variance(buf.map((b) => b.x));
+      const vIy = variance(buf.map((b) => b.y));
+      const vBx = variance(buf.map((b) => b.bx));
+      const vBy = variance(buf.map((b) => b.by));
+      const ok = vIx < IRIS_VAR && vIy < IRIS_VAR && vBx < BLEND_VAR && vBy < BLEND_VAR;
+      if (ok) stable++;
+      else stable = Math.max(0, stable - 2);
+
+      onProgress?.(Math.min(stable / STABLE_NEEDED, 1), ok);
+
+      if (stable >= STABLE_NEEDED) {
+        return {
+          ix: trimmedMean(buf.map((b) => b.x)),
+          iy: trimmedMean(buf.map((b) => b.y)),
+          bx: trimmedMean(buf.map((b) => b.bx)),
+          by: trimmedMean(buf.map((b) => b.by)),
+          hx: trimmedMean(buf.map((b) => b.hx)),
+          hy: trimmedMean(buf.map((b) => b.hy)),
+          sx: point.x,
+          sy: point.y,
+        };
+      }
+    }
+    throw new Error("응시가 안정되지 않습니다 — 점을 고정해서 응시하세요");
+  }
+
   async sampleAt(point, frames = 16) {
     const collected = [];
     const start = performance.now();
@@ -310,6 +369,14 @@ function trimmedMean(arr) {
   const trim = Math.floor(sorted.length * 0.25);
   const slice = sorted.slice(trim, sorted.length - trim);
   return mean(slice.length ? slice : sorted);
+}
+
+function variance(arr) {
+  if (arr.length < 2) return 0;
+  const m = mean(arr);
+  let s = 0;
+  for (const v of arr) s += (v - m) ** 2;
+  return s / (arr.length - 1);
 }
 
 function wait(ms) {
