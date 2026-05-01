@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0f17" />
+<title>Eye Tracker</title>
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>Eye Tracker</h1>
+    <p class="hint">웹캠으로 시선을 추적합니다. HTTPS와 카메라 권한이 필요합니다.</p>
+  </header>
+
+  <main>
+    <div id="preview">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="overlay"></canvas>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn">시작</button>
+      <button id="calibrateBtn" disabled>캘리브레이션</button>
+      <button id="stopBtn" disabled>정지</button>
+      <label class="toggle">
+        <input type="checkbox" id="showOverlay" checked /> 랜드마크 표시
+      </label>
+    </div>
+
+    <p id="status" class="status">대기 중</p>
+  </main>
+
+  <div id="gazeDot" class="gaze-dot" hidden></div>
+
+  <div id="calibration" class="calibration" hidden>
+    <div id="calibTarget" class="calib-target"></div>
+    <p id="calibText" class="calib-text">화면의 점을 응시하세요</p>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
