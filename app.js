@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=13";
+import { EyeTracker } from "./eye-tracker.js?v=14";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();
@@ -184,14 +184,18 @@ calibrateBtn.addEventListener("click", async () => {
       calibText.textContent = `${i + 1} / ${points.length} — 점을 응시하세요`;
       await sleep(450);
       if (myAbort.aborted) throw new Error("취소됨");
-      const sample = await tracker.sampleWhenStable(p, (progress, isStable) => {
-        if (myAbort.aborted) return;
-        if (isStable) calibTarget.classList.add("sampling");
-        else calibTarget.classList.remove("sampling");
-        const pct = Math.round(progress * 100);
-        const bars = renderBar(progress);
-        calibText.textContent = `${i + 1} / ${points.length} — 안정도 ${bars} ${pct}%`;
-      });
+      const sample = await tracker.sampleWhenStable(
+        p,
+        { W, H },
+        (progress, isStable, reason) => {
+          if (myAbort.aborted) return;
+          if (isStable) calibTarget.classList.add("sampling");
+          else calibTarget.classList.remove("sampling");
+          const pct = Math.round(progress * 100);
+          const bars = renderBar(progress);
+          calibText.textContent = `${i + 1} / ${points.length} — ${bars} ${pct}% (${reason})`;
+        }
+      );
       if (myAbort.aborted) throw new Error("취소됨");
       dataset.push(sample);
       calibText.textContent = `${i + 1} / ${points.length} ✓`;
