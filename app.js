@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=15";
+import { EyeTracker } from "./eye-tracker.js?v=16";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();
@@ -206,7 +206,27 @@ calibrateBtn.addEventListener("click", async () => {
 
     const fit = tracker.fitFromSamples(dataset);
     const rms = Math.round(Math.hypot(fit.rmsX, fit.rmsY));
-    setStatus(`캘리브레이션 완료 (적합 오차 ±${rms}px)`);
+
+    const center = { x: W / 2, y: H / 2 };
+    moveTarget(center.x, center.y);
+    calibTarget.classList.remove("sampling");
+    calibText.textContent = "마지막 — 중앙 점을 응시하면 영점 보정";
+    await sleep(400);
+    if (myAbort.aborted) throw new Error("취소됨");
+    const bias = await tracker.finalizeBias(
+      center,
+      { W, H },
+      (progress, isStable, reason) => {
+        if (myAbort.aborted) return;
+        if (isStable) calibTarget.classList.add("sampling");
+        else calibTarget.classList.remove("sampling");
+        const pct = Math.round(progress * 100);
+        const bars = renderBar(progress);
+        calibText.textContent = `영점 보정 — ${bars} ${pct}% (${reason})`;
+      }
+    );
+    const dy = Math.round(bias.y);
+    setStatus(`캘리브레이션 완료 (적합 ±${rms}px, 영점 보정 Δy=${dy >= 0 ? "+" : ""}${dy}px)`);
   } catch (e) {
     console.error(e);
     setStatus("캘리브레이션 실패: " + (e?.message ?? e));
