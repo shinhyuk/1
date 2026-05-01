@@ -8,9 +8,10 @@
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <title>Eye Tracker</title>
-<link rel="stylesheet" href="./style.css?v=7" />
+<link rel="stylesheet" href="./style.css?v=8" />
 </head>
 <body>
+  <pre id="debugLog" class="debug-log"></pre>
   <div id="permGate" class="perm-gate">
     <div class="perm-card">
       <h2>카메라 권한 필요</h2>
@@ -27,7 +28,7 @@
           <li>위 조치 후 페이지 새로고침</li>
         </ol>
       </details>
-      <p class="hint">build v7 — 새 코드 (탭으로 진행)</p>
+      <p class="hint">build v8</p>
     </div>
   </div>
 
@@ -57,10 +58,10 @@
 
   <div id="calibration" class="calibration" hidden>
     <div id="calibTarget" class="calib-target"></div>
-    <p id="calibText" class="calib-text">탭하여 진행 (build v7)</p>
+    <p id="calibText" class="calib-text">(초기 텍스트 — JS 미실행)</p>
     <button id="calibCancel" class="calib-cancel">취소</button>
   </div>
 
-  <script type="module" src="./app.js?v=7"></script>
+  <script type="module" src="./app.js?v=8"></script>
 </body>
 </html>
