@@ -32,18 +32,33 @@ export class EyeTracker extends EventTarget {
     this.lastLandmarks = null;
   }
 
-  async init() {
+  async init(onProgress) {
+    onProgress?.("WASM 로딩 중");
     const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
-    this.faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-      runningMode: "VIDEO",
-      numFaces: 1,
-    });
+    onProgress?.("모델 로딩 중 (GPU)");
+    try {
+      this.faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+        runningMode: "VIDEO",
+        numFaces: 1,
+      });
+    } catch (e) {
+      onProgress?.("GPU 실패, CPU로 재시도");
+      this.faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+        runningMode: "VIDEO",
+        numFaces: 1,
+      });
+    }
   }
 
-  async start(video) {
-    if (!this.faceLandmarker) await this.init();
+  async start(video, onProgress) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("이 브라우저는 카메라 API를 지원하지 않습니다");
+    }
+    if (!this.faceLandmarker) await this.init(onProgress);
     this.video = video;
+    onProgress?.("카메라 권한 요청 중");
     this.stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: "user",
@@ -52,6 +67,7 @@ export class EyeTracker extends EventTarget {
       },
       audio: false,
     });
+    onProgress?.("비디오 시작 중");
     video.srcObject = this.stream;
     await new Promise((res) => {
       if (video.readyState >= 2) res();

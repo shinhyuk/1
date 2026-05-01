@@ -69,18 +69,34 @@ tracker.addEventListener("error", (ev) => {
 
 startBtn.addEventListener("click", async () => {
   startBtn.disabled = true;
-  setStatus("모델 로딩 중...");
+  setStatus("준비 중...");
+  if (!window.isSecureContext) {
+    setStatus("HTTPS 필요. 현재 페이지가 보안 컨텍스트가 아닙니다.");
+    startBtn.disabled = false;
+    return;
+  }
   try {
-    await tracker.start(video);
+    await tracker.start(video, (msg) => setStatus(msg));
     setStatus("추적 중. 캘리브레이션을 진행하세요.");
     calibrateBtn.disabled = false;
     stopBtn.disabled = false;
   } catch (e) {
     console.error(e);
-    setStatus("시작 실패: " + e.message);
+    showError(e);
     startBtn.disabled = false;
   }
 });
+
+function showError(e) {
+  const name = e?.name ?? "Error";
+  const msg = e?.message ?? String(e);
+  let hint = "";
+  if (name === "NotAllowedError") hint = " (카메라 권한이 거부됨)";
+  else if (name === "NotFoundError") hint = " (카메라 장치 없음)";
+  else if (name === "NotReadableError") hint = " (다른 앱이 카메라 사용 중)";
+  else if (msg.includes("getUserMedia")) hint = " (HTTPS 또는 권한 문제)";
+  setStatus(`실패: ${name}: ${msg}${hint}`);
+}
 
 stopBtn.addEventListener("click", () => {
   tracker.stop();
