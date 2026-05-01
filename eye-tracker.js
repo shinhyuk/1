@@ -308,7 +308,12 @@ export class EyeTracker extends EventTarget {
       x: centerPoint.x - predX,
       y: centerPoint.y - predY,
     };
-    this.smoothed = null;
+    // Anchor the EMA at the center we just calibrated against so the
+    // very next gaze event reports a position centered on it (the
+    // user just confirmed they're looking there). Lets the dot start
+    // exactly at the center fixation instead of jumping in from a
+    // pre-bias prediction.
+    this.smoothed = { x: centerPoint.x, y: centerPoint.y };
     return this.bias;
   }
 

@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=17";
+import { EyeTracker } from "./eye-tracker.js?v=18";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();
@@ -240,6 +240,16 @@ calibrateBtn.addEventListener("click", async () => {
     );
     const dy = Math.round(bias.y);
     setStatus(`캘리브레이션 완료 (적합 ±${rms}px, 영점 보정 Δy=${dy >= 0 ? "+" : ""}${dy}px)`);
+
+    // Pre-position the dot at the calibrated center BEFORE the overlay
+    // hides so it appears exactly where the user just confirmed their
+    // gaze instead of wherever the next prediction lands.
+    gazeDot.style.transition = "none";
+    gazeDot.style.transform = `translate(${center.x}px, ${center.y}px)`;
+    gazeDot.hidden = false;
+    void gazeDot.offsetHeight;
+    gazeDot.style.transition = "";
+    gazeDotInitialized = true;
   } catch (e) {
     console.error(e);
     setStatus("캘리브레이션 실패: " + (e?.message ?? e));
