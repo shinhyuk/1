@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=18";
+import { EyeTracker } from "./eye-tracker.js?v=19";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();

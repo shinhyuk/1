@@ -123,6 +123,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .gaze-dot {
   position: fixed;
+  top: 0;
+  left: 0;
   width: 24px;
   height: 24px;
   margin-left: -12px;
