@@ -143,25 +143,30 @@ export class EyeTracker extends EventTarget {
    * Caller drives the sequence (e.g. tap-to-advance), so no awaits/timers here
    * beyond a small frame-averaging loop. Throws if no face is detected.
    */
-  async sampleAt(point, frames = 8) {
+  async sampleAt(point, frames = 16) {
     const collected = [];
     const start = performance.now();
-    while (collected.length < frames && performance.now() - start < 1500) {
+    while (collected.length < frames && performance.now() - start < 2500) {
       await new Promise((r) => requestAnimationFrame(r));
       if (this.lastLandmarks) {
         collected.push(this._extractFeatures(this.lastLandmarks));
       }
     }
-    if (collected.length === 0) {
+    if (collected.length < 4) {
       throw new Error("얼굴이 감지되지 않습니다");
     }
-    const fx = mean(collected.map((c) => c.x));
-    const fy = mean(collected.map((c) => c.y));
-    return { fx, fy, sx: point.x, sy: point.y };
+    const xs = collected.map((c) => c.x);
+    const ys = collected.map((c) => c.y);
+    return {
+      fx: trimmedMean(xs),
+      fy: trimmedMean(ys),
+      sx: point.x,
+      sy: point.y,
+    };
   }
 
   fitFromSamples(dataset) {
-    if (dataset.length < 3) throw new Error("샘플이 부족합니다 (3개 이상 필요)");
+    if (dataset.length < 4) throw new Error("샘플이 부족합니다 (4개 이상 필요)");
     this.calibration = fitCalibration(dataset);
     this.smoothed = null;
     return this.calibration;
@@ -199,9 +204,10 @@ export class EyeTracker extends EventTarget {
     let target;
     if (this.calibration) {
       const { ax, ay } = this.calibration;
+      const phi = featureBasis(features.x, features.y);
       target = {
-        x: ax[0] + ax[1] * features.x + ax[2] * features.y,
-        y: ay[0] + ay[1] * features.x + ay[2] * features.y,
+        x: dot(ax, phi),
+        y: dot(ay, phi),
         calibrated: true,
       };
     } else {
@@ -243,12 +249,36 @@ function mean(arr) {
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
+// Drop the outermost 25% of samples on each side, average the rest.
+// Robust to brief MediaPipe iris jitter (blink frames, lost-track flickers).
+function trimmedMean(arr) {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const trim = Math.floor(sorted.length * 0.25);
+  const slice = sorted.slice(trim, sorted.length - trim);
+  return mean(slice.length ? slice : sorted);
+}
+
 function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Bilinear feature basis: [1, fx, fy, fx*fy].
+// Captures linear gain plus a multiplicative cross term so the
+// mapping can correct for screen-corner stretch when the head
+// isn't perfectly centered. With ≥4 samples the system is
+// well-determined; with 9 samples it averages noise.
+function featureBasis(fx, fy) {
+  return [1, fx, fy, fx * fy];
+}
+
+function dot(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
+}
+
 function fitCalibration(samples) {
-  const X = samples.map((s) => [1, s.fx, s.fy]);
+  const X = samples.map((s) => featureBasis(s.fx, s.fy));
   const yX = samples.map((s) => s.sx);
   const yY = samples.map((s) => s.sy);
   return { ax: leastSquares(X, yX), ay: leastSquares(X, yY) };
@@ -264,27 +294,28 @@ function leastSquares(X, y) {
       for (let c = 0; c < m; c++) XtX[r][c] += X[i][r] * X[i][c];
     }
   }
-  return solve3x3(XtX, Xty);
+  return solveLinear(XtX, Xty);
 }
 
-function solve3x3(A, b) {
+function solveLinear(A, b) {
+  const n = A.length;
   const M = A.map((row, i) => [...row, b[i]]);
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < n; i++) {
     let pivot = i;
-    for (let j = i + 1; j < 3; j++) {
+    for (let j = i + 1; j < n; j++) {
       if (Math.abs(M[j][i]) > Math.abs(M[pivot][i])) pivot = j;
     }
     [M[i], M[pivot]] = [M[pivot], M[i]];
-    if (Math.abs(M[i][i]) < 1e-10) return [0, 0, 0];
-    for (let j = i + 1; j < 3; j++) {
+    if (Math.abs(M[i][i]) < 1e-10) return Array(n).fill(0);
+    for (let j = i + 1; j < n; j++) {
       const f = M[j][i] / M[i][i];
-      for (let k = i; k < 4; k++) M[j][k] -= f * M[i][k];
+      for (let k = i; k <= n; k++) M[j][k] -= f * M[i][k];
     }
   }
-  const x = [0, 0, 0];
-  for (let i = 2; i >= 0; i--) {
-    let s = M[i][3];
-    for (let j = i + 1; j < 3; j++) s -= M[i][j] * x[j];
+  const x = Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    let s = M[i][n];
+    for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
     x[i] = s / M[i][i];
   }
   return x;
