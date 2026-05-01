@@ -28,6 +28,7 @@ export class EyeTracker extends EventTarget {
     this.stream = null;
     this.running = false;
     this.calibration = null;
+    this.bias = { x: 0, y: 0 };
     this.smoothed = null;
     this.lastLandmarks = null;
   }
@@ -275,6 +276,7 @@ export class EyeTracker extends EventTarget {
   fitFromSamples(dataset) {
     if (dataset.length < 12) throw new Error("샘플이 부족합니다 (12개 이상 필요)");
     this.calibration = fitCalibration(dataset);
+    this.bias = { x: 0, y: 0 };
     this.smoothed = null;
     let sx2 = 0, sy2 = 0;
     for (const s of dataset) {
@@ -287,6 +289,27 @@ export class EyeTracker extends EventTarget {
       rmsX: Math.sqrt(sx2 / dataset.length),
       rmsY: Math.sqrt(sy2 / dataset.length),
     };
+  }
+
+  /**
+   * After fitFromSamples, the model has small residuals at calibration
+   * points but a systematic bias often shows up between them on phones
+   * (camera at top of screen, eyelid occlusion looking down). Sample a
+   * single confirmed center fixation and store the residual as a bias
+   * offset, applied additively to every subsequent prediction.
+   */
+  async finalizeBias(centerPoint, viewport, onProgress) {
+    if (!this.calibration) throw new Error("먼저 캘리브레이션이 필요합니다");
+    const sample = await this.sampleWhenStable(centerPoint, viewport, onProgress);
+    const phi = featureBasis(sample);
+    const predX = dot(this.calibration.ax, phi);
+    const predY = dot(this.calibration.ay, phi);
+    this.bias = {
+      x: centerPoint.x - predX,
+      y: centerPoint.y - predY,
+    };
+    this.smoothed = null;
+    return this.bias;
   }
 
   async calibrate(points, onShow, onSample, opts = {}) {
@@ -330,8 +353,8 @@ export class EyeTracker extends EventTarget {
         hy: features.hy,
       });
       target = {
-        x: dot(ax, phi),
-        y: dot(ay, phi),
+        x: dot(ax, phi) + this.bias.x,
+        y: dot(ay, phi) + this.bias.y,
         calibrated: true,
       };
     } else {
@@ -434,23 +457,12 @@ function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Combined feature basis with extra vertical degrees of freedom.
-// Vertical mapping is non-linear on phones because the camera sits at
-// the top of the screen (looking down ≠ −1 × looking up in geometry,
-// and eyelids occlude the iris when looking down) — so quadratic and
-// head-pitch cross terms target that specifically. 11 parameters;
-// 15-point (3×5) calibration keeps it over-determined.
+// 8-parameter linear-plus-cross-term basis. Empirically the quadratic
+// vertical terms (iy², by², by·hy) trialled in v15 made things worse
+// because 11 params on 15 noisy samples overfits and produces wild
+// extrapolation between calibration points.
 function featureBasis(s) {
-  return [
-    1,
-    s.ix, s.iy,
-    s.bx, s.by,
-    s.hx, s.hy,
-    s.bx * s.by,
-    s.iy * s.iy,
-    s.by * s.by,
-    s.by * s.hy,
-  ];
+  return [1, s.ix, s.iy, s.bx, s.by, s.hx, s.hy, s.bx * s.by];
 }
 
 function blendshape(blends, name) {
