@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=16";
+import { EyeTracker } from "./eye-tracker.js?v=17";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();
@@ -61,13 +61,24 @@ function drawLandmarks(landmarks) {
   }
 }
 
+let gazeDotInitialized = false;
+
 tracker.addEventListener("gaze", (ev) => {
   const { landmarks, gaze } = ev.detail;
   drawLandmarks(landmarks);
-  if (gaze.calibrated) {
-    gazeDot.hidden = false;
+  if (!gaze.calibrated || !calibrationOverlay.hidden) return;
+  if (!gazeDotInitialized) {
+    // Place the dot directly at the corrected gaze, suppressing the
+    // CSS transition for one frame so it doesn't slide in from origin.
+    gazeDot.style.transition = "none";
     gazeDot.style.transform = `translate(${gaze.x}px, ${gaze.y}px)`;
+    gazeDot.hidden = false;
+    void gazeDot.offsetHeight;
+    gazeDot.style.transition = "";
+    gazeDotInitialized = true;
+    return;
   }
+  gazeDot.style.transform = `translate(${gaze.x}px, ${gaze.y}px)`;
 });
 
 tracker.addEventListener("lost", () => {
@@ -148,6 +159,8 @@ calibrateBtn.addEventListener("click", async () => {
   calibrateBtn.disabled = true;
   stopBtn.disabled = true;
   gazeDot.hidden = true;
+  gazeDot.style.transform = "";
+  gazeDotInitialized = false;
 
   if (!tracker.lastLandmarks) {
     setStatus("얼굴이 검출되지 않습니다. 카메라에 얼굴이 보이는지 확인하세요.");
