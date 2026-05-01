@@ -138,6 +138,35 @@ export class EyeTracker extends EventTarget {
    * @param {(point, index) => Promise<void>} onSample called right before sampling starts
    * @param {{samples?: number, dwell?: number}} opts
    */
+  /**
+   * Sample current iris features, averaged over a few frames.
+   * Caller drives the sequence (e.g. tap-to-advance), so no awaits/timers here
+   * beyond a small frame-averaging loop. Throws if no face is detected.
+   */
+  async sampleAt(point, frames = 8) {
+    const collected = [];
+    const start = performance.now();
+    while (collected.length < frames && performance.now() - start < 1500) {
+      await new Promise((r) => requestAnimationFrame(r));
+      if (this.lastLandmarks) {
+        collected.push(this._extractFeatures(this.lastLandmarks));
+      }
+    }
+    if (collected.length === 0) {
+      throw new Error("얼굴이 감지되지 않습니다");
+    }
+    const fx = mean(collected.map((c) => c.x));
+    const fy = mean(collected.map((c) => c.y));
+    return { fx, fy, sx: point.x, sy: point.y };
+  }
+
+  fitFromSamples(dataset) {
+    if (dataset.length < 3) throw new Error("샘플이 부족합니다 (3개 이상 필요)");
+    this.calibration = fitCalibration(dataset);
+    this.smoothed = null;
+    return this.calibration;
+  }
+
   async calibrate(points, onShow, onSample, opts = {}) {
     const { samples = 20, dwell = 600 } = opts;
     const dataset = [];
