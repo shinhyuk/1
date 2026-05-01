@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=8";
+import { EyeTracker } from "./eye-tracker.js?v=9";
 
 const debugLogEl = document.getElementById("debugLog");
 const debugLogLines = [];
@@ -229,15 +229,16 @@ calibrationOverlay.addEventListener("click", async (ev) => {
     }
     tracker.fitFromSamples(calibState.dataset);
     setStatus("캘리브레이션 완료");
+    dbg("calibration complete");
   } catch (e) {
     console.error(e);
+    dbg("calibration ERR " + (e?.message ?? e));
     setStatus("캘리브레이션 실패: " + (e?.message ?? e));
-  } finally {
-    calibrationOverlay.hidden = true;
-    calibrateBtn.disabled = false;
-    stopBtn.disabled = false;
-    calibState = null;
   }
+  calibrationOverlay.hidden = true;
+  calibrateBtn.disabled = false;
+  stopBtn.disabled = false;
+  calibState = null;
 });
 
 calibCancel.addEventListener("click", (ev) => {

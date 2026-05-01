@@ -165,6 +165,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   justify-content: center;
 }
 
+.calibration[hidden] { display: none; }
+
 .calib-target {
   position: absolute;
   top: 0;
