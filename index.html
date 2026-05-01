@@ -8,12 +8,32 @@
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
 <title>Eye Tracker</title>
-<link rel="stylesheet" href="./style.css?v=4" />
+<link rel="stylesheet" href="./style.css?v=5" />
 </head>
 <body>
+  <div id="permGate" class="perm-gate">
+    <div class="perm-card">
+      <h2>카메라 권한 필요</h2>
+      <p>아이트래킹을 위해 카메라가 필요합니다.<br/>아래 버튼을 누르면 권한 요청 팝업이 뜹니다.</p>
+      <button id="permBtn" class="big-btn">카메라 권한 허용</button>
+      <p id="permStatus" class="perm-status"></p>
+      <details id="permHelp" class="perm-help" hidden>
+        <summary>팝업이 안 뜨거나 거부됐을 때</summary>
+        <ol>
+          <li>iPhone <b>설정</b> 앱 → <b>Safari</b> → 아래로 스크롤 → <b>Camera</b> → <b>Ask</b> 또는 <b>Allow</b></li>
+          <li>또는 Safari URL 바의 <b>AA</b> 버튼 → <b>Website Settings</b> → <b>Camera</b> → <b>Allow</b></li>
+          <li>또는 Settings → Safari → <b>Advanced</b> → <b>Website Data</b> → <code>github.io</code> 검색 후 삭제</li>
+          <li>Private Browsing(시크릿) 탭이면 일반 탭으로 전환</li>
+          <li>위 조치 후 페이지 새로고침</li>
+        </ol>
+      </details>
+      <p class="hint">build v5</p>
+    </div>
+  </div>
+
   <header>
     <h1>Eye Tracker</h1>
-    <p class="hint">아래 <b>시작</b> 버튼을 눌러야 카메라 권한 요청이 뜹니다. (build v4)</p>
+    <p class="hint">캘리브레이션 후 시선이 추적됩니다.</p>
   </header>
 
   <main>
@@ -23,7 +43,6 @@
     </div>
 
     <div class="controls">
-      <button id="startBtn">시작</button>
       <button id="calibrateBtn" disabled>캘리브레이션</button>
       <button id="stopBtn" disabled>정지</button>
       <label class="toggle">
@@ -41,6 +60,6 @@
     <p id="calibText" class="calib-text">화면의 점을 응시하세요</p>
   </div>
 
-  <script type="module" src="./app.js?v=4"></script>
+  <script type="module" src="./app.js?v=5"></script>
 </body>
 </html>

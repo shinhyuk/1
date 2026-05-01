@@ -1,8 +1,7 @@
-import { EyeTracker } from "./eye-tracker.js?v=4";
+import { EyeTracker } from "./eye-tracker.js?v=5";
 
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
-const startBtn = document.getElementById("startBtn");
 const calibrateBtn = document.getElementById("calibrateBtn");
 const stopBtn = document.getElementById("stopBtn");
 const showOverlayChk = document.getElementById("showOverlay");
@@ -11,6 +10,10 @@ const gazeDot = document.getElementById("gazeDot");
 const calibrationOverlay = document.getElementById("calibration");
 const calibTarget = document.getElementById("calibTarget");
 const calibText = document.getElementById("calibText");
+const permGate = document.getElementById("permGate");
+const permBtn = document.getElementById("permBtn");
+const permStatus = document.getElementById("permStatus");
+const permHelp = document.getElementById("permHelp");
 
 const tracker = new EyeTracker({ smoothing: 0.78 });
 const ctx = overlay.getContext("2d");
@@ -67,43 +70,57 @@ tracker.addEventListener("error", (ev) => {
   setStatus("오류: " + (ev.detail?.message ?? "알 수 없음"));
 });
 
-startBtn.addEventListener("click", async () => {
-  startBtn.disabled = true;
-  setStatus("준비 중...");
+function setPermStatus(msg, isError = false) {
+  permStatus.textContent = msg;
+  permStatus.classList.toggle("error", isError);
+}
+
+permBtn.addEventListener("click", async () => {
+  permBtn.disabled = true;
+  permHelp.hidden = true;
+  setPermStatus("준비 중...");
+
   if (!window.isSecureContext) {
-    setStatus("HTTPS 필요. 현재 페이지가 보안 컨텍스트가 아닙니다.");
-    startBtn.disabled = false;
+    setPermStatus("HTTPS 필요. 현재 페이지가 보안 컨텍스트가 아닙니다.", true);
+    permBtn.disabled = false;
     return;
   }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setPermStatus("이 브라우저는 카메라 API를 지원하지 않습니다.", true);
+    permHelp.hidden = false;
+    permBtn.disabled = false;
+    return;
+  }
+
   try {
-    await tracker.start(video, (msg) => setStatus(msg));
+    await tracker.start(video, (msg) => setPermStatus(msg));
+    permGate.hidden = true;
     setStatus("추적 중. 캘리브레이션을 진행하세요.");
     calibrateBtn.disabled = false;
     stopBtn.disabled = false;
   } catch (e) {
     console.error(e);
-    showError(e);
-    startBtn.disabled = false;
+    const name = e?.name ?? "Error";
+    const msg = e?.message ?? String(e);
+    let hint = "";
+    if (name === "NotAllowedError") hint = "카메라 권한이 거부되었습니다.";
+    else if (name === "NotFoundError") hint = "카메라 장치를 찾을 수 없습니다.";
+    else if (name === "NotReadableError") hint = "다른 앱이 카메라를 사용 중입니다.";
+    else if (name === "OverconstrainedError") hint = "카메라 설정 호환 안 됨.";
+    else if (msg.includes("getUserMedia")) hint = "HTTPS 또는 권한 문제.";
+    else hint = `${name}: ${msg}`;
+    setPermStatus(hint, true);
+    permHelp.hidden = false;
+    permBtn.disabled = false;
+    permBtn.textContent = "다시 시도";
   }
 });
-
-function showError(e) {
-  const name = e?.name ?? "Error";
-  const msg = e?.message ?? String(e);
-  let hint = "";
-  if (name === "NotAllowedError") hint = " (카메라 권한이 거부됨)";
-  else if (name === "NotFoundError") hint = " (카메라 장치 없음)";
-  else if (name === "NotReadableError") hint = " (다른 앱이 카메라 사용 중)";
-  else if (msg.includes("getUserMedia")) hint = " (HTTPS 또는 권한 문제)";
-  setStatus(`실패: ${name}: ${msg}${hint}`);
-}
 
 stopBtn.addEventListener("click", () => {
   tracker.stop();
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   gazeDot.hidden = true;
-  setStatus("정지됨");
-  startBtn.disabled = false;
+  setStatus("정지됨. 다시 시작하려면 새로고침하세요.");
   calibrateBtn.disabled = true;
   stopBtn.disabled = true;
 });
