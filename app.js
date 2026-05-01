@@ -113,7 +113,14 @@ calibrateBtn.addEventListener("click", async () => {
   stopBtn.disabled = true;
   gazeDot.hidden = true;
 
-  const margin = 0.1;
+  if (!tracker.lastLandmarks) {
+    setStatus("얼굴이 검출되지 않습니다. 카메라에 얼굴이 보이는지 확인하세요.");
+    calibrateBtn.disabled = false;
+    stopBtn.disabled = false;
+    return;
+  }
+
+  const margin = 0.12;
   const W = window.innerWidth;
   const H = window.innerHeight;
   const points = [
@@ -124,30 +131,41 @@ calibrateBtn.addEventListener("click", async () => {
     { x: W * (1 - margin), y: H * (1 - margin) },
   ];
 
+  calibTarget.style.left = points[0].x + "px";
+  calibTarget.style.top = points[0].y + "px";
+  calibText.textContent = "준비 중...";
   calibrationOverlay.hidden = false;
 
   try {
     await tracker.calibrate(
       points,
-      async (p) => {
+      async (p, i) => {
         calibTarget.classList.remove("sampling");
         calibTarget.style.left = p.x + "px";
         calibTarget.style.top = p.y + "px";
-        calibText.textContent = "점을 응시하세요";
+        calibText.textContent = `${i + 1} / ${points.length} — 점을 응시하세요`;
       },
-      async () => {
+      async (p, i) => {
         calibTarget.classList.add("sampling");
-        calibText.textContent = "샘플링 중... 점을 계속 응시하세요";
+        calibText.textContent = `${i + 1} / ${points.length} — 샘플링 중`;
       }
     );
     setStatus("캘리브레이션 완료");
   } catch (e) {
-    setStatus("캘리브레이션 실패: " + e.message);
+    console.error(e);
+    setStatus("캘리브레이션 실패: " + (e?.message ?? e));
   } finally {
     calibrationOverlay.hidden = true;
     calibrateBtn.disabled = false;
     stopBtn.disabled = false;
   }
+});
+
+window.addEventListener("error", (ev) => {
+  setStatus("JS 오류: " + (ev.error?.message ?? ev.message));
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  setStatus("Promise 오류: " + (ev.reason?.message ?? ev.reason));
 });
 
 window.addEventListener("resize", () => {
