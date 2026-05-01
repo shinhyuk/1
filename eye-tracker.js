@@ -36,18 +36,22 @@ export class EyeTracker extends EventTarget {
     onProgress?.("WASM 로딩 중");
     const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
     onProgress?.("모델 로딩 중 (GPU)");
+    const opts = {
+      runningMode: "VIDEO",
+      numFaces: 1,
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: true,
+    };
     try {
       this.faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+        ...opts,
         baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-        runningMode: "VIDEO",
-        numFaces: 1,
       });
     } catch (e) {
       onProgress?.("GPU 실패, CPU로 재시도");
       this.faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+        ...opts,
         baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
-        runningMode: "VIDEO",
-        numFaces: 1,
       });
     }
   }
@@ -98,20 +102,26 @@ export class EyeTracker extends EventTarget {
     }
     if (result?.faceLandmarks?.[0]) {
       const lm = result.faceLandmarks[0];
+      const blends = result.faceBlendshapes?.[0]?.categories ?? null;
+      const matrix = result.facialTransformationMatrixes?.[0]?.data ?? null;
       this.lastLandmarks = lm;
-      const features = this._extractFeatures(lm);
+      this.lastBlendshapes = blends;
+      this.lastMatrix = matrix;
+      const features = this._extractFeatures(lm, blends, matrix);
       const gaze = this._estimateGaze(features);
       this.dispatchEvent(
         new CustomEvent("gaze", { detail: { landmarks: lm, features, gaze } })
       );
     } else {
       this.lastLandmarks = null;
+      this.lastBlendshapes = null;
+      this.lastMatrix = null;
       this.dispatchEvent(new CustomEvent("lost"));
     }
     requestAnimationFrame(() => this._loop());
   }
 
-  _extractFeatures(lm) {
+  _extractFeatures(lm, blends, matrix) {
     const irisR = avg(RIGHT_IRIS.map((i) => lm[i]));
     const irisL = avg(LEFT_IRIS.map((i) => lm[i]));
     const r = normalizeIris(
@@ -128,7 +138,30 @@ export class EyeTracker extends EventTarget {
       lm[L_EYE_TOP],
       lm[L_EYE_BOTTOM]
     );
-    return { x: (r.x + l.x) / 2, y: (r.y + l.y) / 2, r, l };
+    const irisX = (r.x + l.x) / 2;
+    const irisY = (r.y + l.y) / 2;
+
+    let bx = 0, by = 0;
+    if (blends) {
+      const inL = blendshape(blends, "eyeLookInLeft");
+      const outL = blendshape(blends, "eyeLookOutLeft");
+      const inR = blendshape(blends, "eyeLookInRight");
+      const outR = blendshape(blends, "eyeLookOutRight");
+      const upL = blendshape(blends, "eyeLookUpLeft");
+      const upR = blendshape(blends, "eyeLookUpRight");
+      const dnL = blendshape(blends, "eyeLookDownLeft");
+      const dnR = blendshape(blends, "eyeLookDownRight");
+      bx = (outR + inL - outL - inR) / 2;
+      by = (upL + upR - dnL - dnR) / 2;
+    }
+
+    let hx = 0, hy = 0;
+    if (matrix && matrix.length >= 16) {
+      hx = matrix[8];
+      hy = matrix[9];
+    }
+
+    return { x: irisX, y: irisY, bx, by, hx, hy, r, l };
   }
 
   /**
@@ -149,27 +182,41 @@ export class EyeTracker extends EventTarget {
     while (collected.length < frames && performance.now() - start < 2500) {
       await new Promise((r) => requestAnimationFrame(r));
       if (this.lastLandmarks) {
-        collected.push(this._extractFeatures(this.lastLandmarks));
+        collected.push(
+          this._extractFeatures(this.lastLandmarks, this.lastBlendshapes, this.lastMatrix)
+        );
       }
     }
     if (collected.length < 4) {
       throw new Error("얼굴이 감지되지 않습니다");
     }
-    const xs = collected.map((c) => c.x);
-    const ys = collected.map((c) => c.y);
     return {
-      fx: trimmedMean(xs),
-      fy: trimmedMean(ys),
+      ix: trimmedMean(collected.map((c) => c.x)),
+      iy: trimmedMean(collected.map((c) => c.y)),
+      bx: trimmedMean(collected.map((c) => c.bx)),
+      by: trimmedMean(collected.map((c) => c.by)),
+      hx: trimmedMean(collected.map((c) => c.hx)),
+      hy: trimmedMean(collected.map((c) => c.hy)),
       sx: point.x,
       sy: point.y,
     };
   }
 
   fitFromSamples(dataset) {
-    if (dataset.length < 4) throw new Error("샘플이 부족합니다 (4개 이상 필요)");
+    if (dataset.length < 6) throw new Error("샘플이 부족합니다 (6개 이상 필요)");
     this.calibration = fitCalibration(dataset);
     this.smoothed = null;
-    return this.calibration;
+    let sx2 = 0, sy2 = 0;
+    for (const s of dataset) {
+      const phi = featureBasis(s);
+      sx2 += (dot(this.calibration.ax, phi) - s.sx) ** 2;
+      sy2 += (dot(this.calibration.ay, phi) - s.sy) ** 2;
+    }
+    return {
+      ...this.calibration,
+      rmsX: Math.sqrt(sx2 / dataset.length),
+      rmsY: Math.sqrt(sy2 / dataset.length),
+    };
   }
 
   async calibrate(points, onShow, onSample, opts = {}) {
@@ -204,7 +251,14 @@ export class EyeTracker extends EventTarget {
     let target;
     if (this.calibration) {
       const { ax, ay } = this.calibration;
-      const phi = featureBasis(features.x, features.y);
+      const phi = featureBasis({
+        ix: features.x,
+        iy: features.y,
+        bx: features.bx,
+        by: features.by,
+        hx: features.hx,
+        hy: features.hy,
+      });
       target = {
         x: dot(ax, phi),
         y: dot(ay, phi),
@@ -262,13 +316,18 @@ function wait(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Bilinear feature basis: [1, fx, fy, fx*fy].
-// Captures linear gain plus a multiplicative cross term so the
-// mapping can correct for screen-corner stretch when the head
-// isn't perfectly centered. With ≥4 samples the system is
-// well-determined; with 9 samples it averages noise.
-function featureBasis(fx, fy) {
-  return [1, fx, fy, fx * fy];
+// Combined feature basis: iris-corner ratio (ix, iy), MediaPipe gaze
+// blendshapes (bx, by) and head-forward direction (hx, hy from the
+// facial transformation matrix), plus bilinear cross terms for the
+// two strongest signals. 8 parameters; 9 calibration samples keep it
+// over-determined so noise averages out.
+function featureBasis(s) {
+  return [1, s.ix, s.iy, s.bx, s.by, s.hx, s.hy, s.bx * s.by];
+}
+
+function blendshape(blends, name) {
+  for (const c of blends) if (c.categoryName === name) return c.score;
+  return 0;
 }
 
 function dot(a, b) {
@@ -278,13 +337,13 @@ function dot(a, b) {
 }
 
 function fitCalibration(samples) {
-  const X = samples.map((s) => featureBasis(s.fx, s.fy));
+  const X = samples.map(featureBasis);
   const yX = samples.map((s) => s.sx);
   const yY = samples.map((s) => s.sy);
   return { ax: leastSquares(X, yX), ay: leastSquares(X, yY) };
 }
 
-function leastSquares(X, y) {
+function leastSquares(X, y, lambda = 1e-3) {
   const m = X[0].length;
   const XtX = Array.from({ length: m }, () => Array(m).fill(0));
   const Xty = Array(m).fill(0);
@@ -294,6 +353,7 @@ function leastSquares(X, y) {
       for (let c = 0; c < m; c++) XtX[r][c] += X[i][r] * X[i][c];
     }
   }
+  for (let r = 1; r < m; r++) XtX[r][r] += lambda;
   return solveLinear(XtX, Xty);
 }
 

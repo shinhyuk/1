@@ -1,4 +1,4 @@
-import { EyeTracker } from "./eye-tracker.js?v=10";
+import { EyeTracker } from "./eye-tracker.js?v=11";
 
 window.addEventListener("pageshow", (ev) => {
   if (ev.persisted) location.reload();
@@ -188,8 +188,9 @@ calibrationOverlay.addEventListener("click", async (ev) => {
       showCalibStep();
       return;
     }
-    tracker.fitFromSamples(calibState.dataset);
-    setStatus("캘리브레이션 완료");
+    const fit = tracker.fitFromSamples(calibState.dataset);
+    const rms = Math.round(Math.hypot(fit.rmsX, fit.rmsY));
+    setStatus(`캘리브레이션 완료 (적합 오차 ±${rms}px)`);
   } catch (e) {
     console.error(e);
     setStatus("캘리브레이션 실패: " + (e?.message ?? e));
